@@ -5,6 +5,7 @@ import { waitUntil } from "@vercel/functions";
 import { lineClient } from "@/lib/line/client";
 import { downloadLineImageAsBuffer } from "@/lib/line/content";
 import { parseTransactionFromText } from "@/lib/openai/parse-transaction";
+import { parseTransactionLocally } from "@/lib/openai/parse-transaction-local";
 import { parseSlipWithVision } from "@/lib/ocr/parse-slip";
 import {
   getUserAndDefaultGroup,
@@ -124,7 +125,15 @@ async function processEventsInBackground(events: WebhookEvent[]) {
         // --------------------------------------------------------------------
         // ข้อความบันทึกรายรับ-รายจ่ายทั่วไป (เช่น "กาแฟ 60 ด้วย SCB")
         // --------------------------------------------------------------------
-        const extracted = await parseTransactionFromText(userText);
+        let extracted = await parseTransactionFromText(userText);
+
+        // AI ใช้งานไม่ได้ (เช่น credit หมด) -> ใช้ตัวแยกข้อความพื้นฐานแทน
+        if (!extracted) {
+          extracted = parseTransactionLocally(userText);
+          if (extracted) {
+            console.warn("⚠️ ใช้ตัวแยกข้อความพื้นฐานแทน AI:", extracted.item, extracted.amount);
+          }
+        }
 
         if (!extracted) {
           await lineClient.pushMessage({
