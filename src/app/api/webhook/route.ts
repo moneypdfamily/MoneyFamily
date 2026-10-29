@@ -6,7 +6,7 @@ import { lineClient } from "@/lib/line/client";
 import { downloadLineImageAsBuffer } from "@/lib/line/content";
 import { parseTransactionFromText } from "@/lib/openai/parse-transaction";
 import { parseTransactionLocally } from "@/lib/openai/parse-transaction-local";
-import { parseSlipWithVision } from "@/lib/ocr/parse-slip";
+import { parseSlipWithVision, SlipParseError } from "@/lib/ocr/parse-slip";
 import {
   getUserAndDefaultGroup,
   saveTransactionToSupabase,
@@ -231,6 +231,19 @@ async function processEventsInBackground(events: WebhookEvent[]) {
           });
         } catch (imageError) {
           console.error("❌ Error processing slip image:", imageError);
+
+          // แจ้งผู้ใช้ตามสาเหตุจริง (ไม่บันทึกข้อมูลปลอมแทนสลิป)
+          const code = imageError instanceof SlipParseError ? imageError.code : "parse_failed";
+          const text =
+            code === "quota_exceeded"
+              ? "⚠️ ตอนนี้ระบบอ่านสลิปด้วย AI ใช้งานไม่ได้ (เครดิต OpenAI หมด) — รายการนี้ยังไม่ถูกบันทึก\n\nพิมพ์ยอดเองได้เลยครับ เช่น “ข้าวผัด 145” แล้วบอทจะบันทึกให้ทันที"
+              : code === "missing_api_key"
+                ? "⚠️ ยังไม่ได้ตั้งค่า OPENAI_API_KEY สำหรับอ่านสลิป — พิมพ์ยอดเองได้เลย เช่น “กาแฟ 60”"
+                : "❌ อ่านสลิปไม่สำเร็จ รายการยังไม่ถูกบันทึก — ลองส่งรูปที่ชัดขึ้น หรือพิมพ์ยอดเอง เช่น “กาแฟ 60”";
+
+          await lineClient
+            .pushMessage({ to: lineUserId, messages: [{ type: "text", text }] })
+            .catch((pushErr) => console.error("❌ แจ้งผู้ใช้ไม่สำเร็จ:", pushErr));
         } finally {
           if (imageBuffer) {
             imageBuffer.fill(0);

@@ -36,6 +36,17 @@ export const SlipDataSchema = z.object({
 
 export type SlipData = z.infer<typeof SlipDataSchema>;
 
+export type SlipParseErrorCode = "missing_api_key" | "quota_exceeded" | "parse_failed";
+
+/** error ที่แยกได้ว่าอ่านสลิปไม่ได้เพราะอะไร (เพื่อตอบผู้ใช้ได้ตรงจุด) */
+export class SlipParseError extends Error {
+  code: SlipParseErrorCode;
+  constructor(code: SlipParseErrorCode) {
+    super(`slip_parse_${code}`);
+    this.code = code;
+  }
+}
+
 /**
  * สกัดข้อมูลสลิปธนาคารจาก Base64 Image
  * รองรับสลิปธนาคารไทยทุกแห่ง (KBank, SCB, Krungthai, PromptPay ฯลฯ)
@@ -43,10 +54,9 @@ export type SlipData = z.infer<typeof SlipDataSchema>;
 export async function parseSlipWithVision(
   base64Image: string
 ): Promise<SlipData | null> {
-  // หากไม่มี OpenAI API Key ให้จำลองการทำงาน (Mock OCR)
+  // ไม่มี key = อ่านสลิปไม่ได้ (ไม่สร้างข้อมูลปลอม)
   if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes("your_openai")) {
-    console.log("ℹ️ Using Simulated OCR Parser (Mock Fallback)...");
-    return mockOcrParser();
+    throw new SlipParseError("missing_api_key");
   }
 
   try {
@@ -81,23 +91,11 @@ export async function parseSlipWithVision(
     return response.choices[0]?.message?.parsed ?? null;
   } catch (error) {
     console.error("❌ OpenAI Vision OCR Error:", error);
-    // กรณี Vision API ขัดข้อง ให้ Fallback เป็น Mock OCR เพื่อความต่อเนื่องของระบบ
-    return mockOcrParser();
+    // ไม่แทนที่ด้วยข้อมูลปลอม — ส่งต่อ error ให้ผู้เรียกแจ้งผู้ใช้ตามจริง
+    const message = error instanceof Error ? error.message : String(error);
+    throw new SlipParseError(
+      /insufficient_quota|429|no credits/i.test(message) ? "quota_exceeded" : "parse_failed"
+    );
   }
-}
-
-/**
- * Mock OCR สำหรับการจำลองทดสอบ
- */
-function mockOcrParser(): SlipData {
-  const today = new Date().toISOString().split("T")[0];
-  return {
-    amount: 185.0,
-    merchant: "ร้านอาหารตามสั่งป้าแจ่ม",
-    account: "KBank (กสิกรไทย)",
-    category: "food",
-    date: today,
-    type: "expense",
-  };
 }
 
