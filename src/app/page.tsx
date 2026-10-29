@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useLiff } from "@/features/liff/liff-context";
 import { SummaryCards } from "@/features/dashboard/summary-cards";
 import { ExpenseChart, MonthlyChartData } from "@/features/dashboard/expense-chart";
 import { TransactionTable, TransactionItem } from "@/features/dashboard/transaction-table";
 import { supabase } from "@/lib/supabase/client";
 import { LiffOnboarding, type OnboardingGroup } from "@/features/liff/onboarding";
-import { LogIn, Plus, Users, RefreshCw, ExternalLink, ShieldAlert, X } from "lucide-react";
+import { LogIn, Plus, Users, RefreshCw, ExternalLink, ShieldAlert, X, Settings2 } from "lucide-react";
 
 export default function DashboardPage() {
   const {
@@ -275,6 +276,14 @@ export default function DashboardPage() {
                 <span>เข้าสู่ระบบด้วย LINE</span>
               </button>
             )}
+
+            <Link
+              href="/settings"
+              title="จัดการกระเป๋าและสมาชิก"
+              className="w-8 h-8 rounded-lg bg-navy-800 hover:bg-navy-700 text-navy-200 flex items-center justify-center transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+            </Link>
 
             <button
               onClick={loadDashboardData}

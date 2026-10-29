@@ -167,6 +167,42 @@ export async function getMembership(userId: string): Promise<FamilyGroup | null>
   };
 }
 
+export interface FamilyMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  role: string | null;
+  joinedAt: string | null;
+}
+
+/** รายชื่อสมาชิกทั้งหมดในครอบครัว พร้อมบทบาท */
+export async function getGroupMembers(groupId: string): Promise<FamilyMember[]> {
+  const { data, error } = await supabaseAdmin
+    .from("group_members")
+    .select("role, joined_at, users:user_id (id, display_name, avatar_url)")
+    .eq("group_id", groupId)
+    .order("joined_at", { ascending: true });
+
+  if (error || !data) {
+    console.error("❌ อ่านรายชื่อสมาชิกไม่สำเร็จ:", error);
+    return [];
+  }
+
+  return data
+    .map((row: any) => {
+      const u = Array.isArray(row.users) ? row.users[0] : row.users;
+      if (!u) return null;
+      return {
+        userId: u.id as string,
+        displayName: (u.display_name as string) || "สมาชิก",
+        avatarUrl: (u.avatar_url as string) ?? null,
+        role: (row.role as string) ?? null,
+        joinedAt: (row.joined_at as string) ?? null,
+      };
+    })
+    .filter(Boolean) as FamilyMember[];
+}
+
 async function insertMember(groupId: string, userId: string, role?: string) {
   const row: Record<string, string> = { group_id: groupId, user_id: userId };
   if (role) row.role = role;
