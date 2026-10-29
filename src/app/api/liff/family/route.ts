@@ -18,6 +18,47 @@ interface WalletSummary {
   count: number;
 }
 
+export interface RecentTransaction {
+  id: string;
+  description: string;
+  category: string;
+  amount: number;
+  type: string;
+  transaction_date: string;
+  is_split: boolean;
+  payerName: string;
+}
+
+async function getRecentTransactions(groupId: string): Promise<RecentTransaction[]> {
+  const { data, error } = await supabaseAdmin
+    .from("transactions")
+    .select(
+      "id, description, category, amount, type, transaction_date, is_split, payer:payer_id (display_name)"
+    )
+    .eq("group_id", groupId)
+    .order("transaction_date", { ascending: false })
+    .limit(30);
+
+  if (error || !data) {
+    console.error("❌ อ่านรายการล่าสุดไม่สำเร็จ:", error);
+    return [];
+  }
+
+  return (data as any[]).map((row) => {
+    const payer = Array.isArray(row.payer) ? row.payer[0] : row.payer;
+    return {
+      id: row.id as string,
+      description: (row.description as string) || "รายการ",
+      category: (row.category as string) || "other",
+      amount: Number(row.amount ?? 0),
+      type: (row.type as string) || "expense",
+      transaction_date: (row.transaction_date as string) || "",
+      is_split: Boolean(row.is_split),
+      payerName: (payer?.display_name as string) || "สมาชิก",
+    };
+  });
+}
+
 async function getWalletSummary(groupId: string): Promise<WalletSummary> {
   const { data, error } = await supabaseAdmin
     .from("transactions")
@@ -50,12 +91,16 @@ export async function POST(req: NextRequest) {
     const group = await getMembership(user.id);
 
     if (!group) {
-      return NextResponse.json({ group: null, members: [], wallet: null }, { headers: NO_STORE });
+      return NextResponse.json(
+      { group: null, members: [], wallet: null, transactions: [] },
+      { headers: NO_STORE }
+    );
     }
 
-    const [members, wallet] = await Promise.all([
+    const [members, wallet, transactions] = await Promise.all([
       getGroupMembers(group.id),
       getWalletSummary(group.id),
+      getRecentTransactions(group.id),
     ]);
 
     return NextResponse.json(
@@ -64,6 +109,7 @@ export async function POST(req: NextRequest) {
         me: { userId: user.id, displayName: user.displayName },
         members,
         wallet,
+        transactions,
       },
       { headers: NO_STORE }
     );

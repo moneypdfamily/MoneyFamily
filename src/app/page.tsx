@@ -1,14 +1,47 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  ExternalLink,
+  LogIn,
+  Plus,
+  RefreshCw,
+  Settings2,
+  ShieldAlert,
+  Users,
+  X,
+} from "lucide-react";
+
 import { useLiff } from "@/features/liff/liff-context";
 import { SummaryCards } from "@/features/dashboard/summary-cards";
 import { ExpenseChart, MonthlyChartData } from "@/features/dashboard/expense-chart";
 import { TransactionTable, TransactionItem } from "@/features/dashboard/transaction-table";
-import { supabase } from "@/lib/supabase/client";
 import { LiffOnboarding, type OnboardingGroup } from "@/features/liff/onboarding";
-import { LogIn, Plus, Users, RefreshCw, ExternalLink, ShieldAlert, X, Settings2 } from "lucide-react";
+
+const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+function buildChartData(transactions: TransactionItem[]): MonthlyChartData[] {
+  const buckets = new Map<string, { income: number; expense: number }>();
+
+  for (const tx of transactions) {
+    const key = (tx.transaction_date || "").slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    const bucket = buckets.get(key) ?? { income: 0, expense: 0 };
+    if (tx.type === "income") bucket.income += tx.amount;
+    else bucket.expense += tx.amount;
+    buckets.set(key, bucket);
+  }
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-4)
+    .map(([key, value]) => ({
+      month: THAI_MONTHS[Number(key.slice(5, 7)) - 1] ?? key,
+      income: value.income,
+      expense: value.expense,
+    }));
+}
 
 export default function DashboardPage() {
   const {
@@ -24,6 +57,7 @@ export default function DashboardPage() {
     relogin,
     closeWindow,
   } = useLiff();
+
   const [isErrorDismissed, setIsErrorDismissed] = useState(false);
   const [group, setGroup] = useState<OnboardingGroup | null>(null);
   const [sessionStatus, setSessionStatus] = useState<
@@ -31,125 +65,69 @@ export default function DashboardPage() {
   >("idle");
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
-  const [chartData, setChartData] = useState<MonthlyChartData[]>([]);
   const [incomeTotal, setIncomeTotal] = useState(0);
   const [expenseTotal, setExpenseTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // ฟังก์ชันดึงข้อมูลจาก Supabase
-  const loadDashboardData = async () => {
+  /** โหลดข้อมูลครอบครัว + รายการจริงจาก API (ไม่มีข้อมูลตัวอย่างแล้ว) */
+  const loadDashboardData = useCallback(async () => {
+    if (!idToken) {
+      setTransactions([]);
+      setIncomeTotal(0);
+      setExpenseTotal(0);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // 1. ดึงข้อมูลรายการจากตาราง transactions
-      const { data, error } = await supabase
-        .from("transactions")
-        .select(`
-          id,
-          description,
-          category,
-          amount,
-          type,
-          transaction_date,
-          is_split,
-          payer:payer_id (display_name)
-        `)
-        .order("transaction_date", { ascending: false })
-        .limit(20);
+      const res = await fetch("/api/liff/family", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
 
-      if (error || !data || data.length === 0) {
-        // Mock fallback สำหรับแสดงผลให้เห็นกราฟและสถิติสวยงามทันที
-        const mockTransactions: TransactionItem[] = [
-          {
-            id: "tx-1",
-            description: "บิ๊กซี ซื้อของใช้เข้าบ้าน",
-            category: "shopping",
-            amount: 1450.0,
-            type: "expense",
-            transaction_date: "2026-10-28",
-            is_split: true,
-            payer_name: profile?.displayName || "คุณ",
-          },
-          {
-            id: "tx-2",
-            description: "กาแฟและอาหารเช้า (SCB)",
-            category: "food",
-            amount: 120.0,
-            type: "expense",
-            transaction_date: "2026-10-28",
-            is_split: false,
-            payer_name: "แม่บ้านสายเปย์",
-          },
-          {
-            id: "tx-3",
-            description: "ค่าน้ำมันรถยนต์",
-            category: "transport",
-            amount: 900.0,
-            type: "expense",
-            transaction_date: "2026-10-26",
-            is_split: false,
-            payer_name: profile?.displayName || "คุณ",
-          },
-          {
-            id: "tx-4",
-            description: "เงินโอนสมทบกองกลางครอบครัว",
-            category: "income",
-            amount: 15000.0,
-            type: "income",
-            transaction_date: "2026-10-25",
-            is_split: false,
-            payer_name: "ทุกคนในบ้าน",
-          },
-        ];
+      if (!res.ok) {
+        const detail = String(data?.detail || data?.error || "ไม่ทราบสาเหตุ");
+        if (res.status === 401 && /expired/i.test(detail)) {
+          refreshToken();
+          return;
+        }
+        console.error("❌ โหลดข้อมูลครอบครัวไม่สำเร็จ:", detail);
+        setTransactions([]);
+        return;
+      }
 
-        setTransactions(mockTransactions);
-        setIncomeTotal(15000);
-        setExpenseTotal(2470);
-        setChartData([
-          { month: "ก.ค.", income: 28000, expense: 21500 },
-          { month: "ส.ค.", income: 30000, expense: 24000 },
-          { month: "ก.ย.", income: 27500, expense: 22800 },
-          { month: "ต.ค.", income: 32000, expense: 26400 },
-        ]);
-      } else {
-        const formatted: TransactionItem[] = data.map((d: any) => ({
-          id: d.id,
-          description: d.description,
-          category: d.category,
-          amount: Number(d.amount),
-          type: d.type,
-          transaction_date: d.transaction_date,
-          is_split: Boolean(d.is_split),
-          payer_name: d.payer?.display_name || "สมาชิก",
-        }));
+      const rows: TransactionItem[] = (data.transactions ?? []).map((row: any) => ({
+        id: String(row.id),
+        description: String(row.description ?? "รายการ"),
+        category: String(row.category ?? "other"),
+        amount: Number(row.amount ?? 0),
+        type: row.type === "income" ? "income" : "expense",
+        transaction_date: String(row.transaction_date ?? ""),
+        is_split: Boolean(row.is_split),
+        payer_name: String(row.payerName ?? "สมาชิก"),
+      }));
 
-        setTransactions(formatted);
+      setTransactions(rows);
+      setIncomeTotal(Number(data.wallet?.income ?? 0));
+      setExpenseTotal(Number(data.wallet?.expense ?? 0));
 
-        // คำนวณสรุปยอด
-        let inc = 0;
-        let exp = 0;
-        formatted.forEach((t) => {
-          if (t.type === "income") inc += t.amount;
-          else if (t.type === "expense") exp += t.amount;
+      if (data.group) {
+        setGroup({
+          id: data.group.id,
+          name: data.group.name,
+          inviteCode: data.group.inviteCode,
+          role: data.group.role ?? null,
         });
-
-        setIncomeTotal(inc);
-        setExpenseTotal(exp);
-
-        // จัดกลุ่มเป็นกราฟรายเดือน
-        setChartData([
-          { month: "ปัจจุบัน", income: inc, expense: exp },
-        ]);
       }
     } catch (err) {
-      console.error("❌ Failed to load dashboard data:", err);
+      console.error("❌ โหลดข้อมูลไม่สำเร็จ:", err);
+      setTransactions([]);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadDashboardData();
-  }, [profile]);
+  }, [idToken, refreshToken]);
 
   // ตรวจว่าผู้ใช้ LINE คนนี้ลงทะเบียนและมีครอบครัวแล้วหรือยัง
   useEffect(() => {
@@ -173,7 +151,6 @@ export default function DashboardPage() {
 
         if (!res.ok) {
           const detail = String(data?.detail || data?.error || "ไม่ทราบสาเหตุ");
-          // token หมดอายุระหว่างใช้งาน: ขอใหม่หนึ่งครั้งแล้วโหลดซ้ำ
           if (res.status === 401 && /expired/i.test(detail) && refreshToken()) {
             return;
           }
@@ -181,8 +158,8 @@ export default function DashboardPage() {
           setSessionStatus("error");
           return;
         }
-        setSessionError(null);
 
+        setSessionError(null);
         if (data.group) {
           setGroup(data.group as OnboardingGroup);
           setSessionStatus("ready");
@@ -201,7 +178,12 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [idToken]);
+  }, [idToken, refreshToken]);
+
+  // โหลดรายการจริงเมื่อพร้อม
+  useEffect(() => {
+    if (sessionStatus === "ready") loadDashboardData();
+  }, [sessionStatus, loadDashboardData]);
 
   if (sessionStatus === "loading") {
     return (
@@ -222,15 +204,16 @@ export default function DashboardPage() {
         onReady={(created) => {
           setGroup(created);
           setSessionStatus("ready");
-          loadDashboardData();
         }}
       />
     );
   }
 
+  const chartData = buildChartData(transactions);
+
   return (
-    <main className="min-h-screen pb-20 md:pb-12 bg-slate-50">
-      {/* 1. Header (Deep Navy Bar with Amber Accents) */}
+    <main className="min-h-screen pb-24 md:pb-12 bg-slate-50">
+      {/* 1. Header */}
       <header className="bg-navy-900 text-white sticky top-0 z-30 shadow-md">
         <div className="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -248,7 +231,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* User profile / Login via LINE */}
           <div className="flex items-center gap-3">
             {isReady && isLoggedIn && profile ? (
               <div className="flex items-center gap-2">
@@ -293,7 +275,6 @@ export default function DashboardPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
             </button>
 
-            {/* เปิดผ่าน LINE: ปิดหน้าต่างกลับไปที่แชท */}
             {isInClient && (
               <button
                 onClick={closeWindow}
@@ -307,9 +288,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 2. Main Content Container */}
       <div className="max-w-5xl mx-auto px-4 py-4 md:py-6 space-y-4 md:space-y-6">
-        {/* LIFF Error / ยังไม่ได้เชื่อมต่อ LINE */}
         {liffError && !isErrorDismissed && (
           <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-2xl">
             <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
@@ -335,30 +314,26 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ใน LINE แต่ไม่ได้ ID token — สาเหตุที่พบบ่อยคือยังไม่เปิด scope openid */}
+        {/* ใน LINE แต่ไม่ได้ ID token */}
         {isReady && !liffError && isInClient && isLoggedIn && !idToken && (
           <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 text-amber-900 p-3.5 rounded-2xl">
             <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="text-xs leading-relaxed">
               <p className="font-bold mb-0.5">ไม่ได้รับ ID token จาก LINE</p>
               <p>
-                เปิดสิทธิ์ <b>openid</b> ให้ LIFF app (LINE Developers Console → LINE Login channel →
-                LIFF → Scopes) แล้วปิด–เปิดหน้าต่างนี้ใหม่ จึงจะยืนยันตัวตนและสร้างครอบครัวได้
+                เปิดสิทธิ์ <b>openid</b> ให้ LIFF app (LINE Login channel → LIFF → Scopes) แล้วปิด–เปิดหน้าต่างนี้ใหม่
               </p>
             </div>
           </div>
         )}
 
-        {/* ตรวจสอบสิทธิ์/ลงทะเบียนกับเซิร์ฟเวอร์ไม่สำเร็จ — แสดงสาเหตุจริง ไม่ซ่อน */}
+        {/* ตรวจสอบสิทธิ์กับเซิร์ฟเวอร์ไม่สำเร็จ */}
         {sessionStatus === "error" && (
           <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-2xl">
             <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="text-xs leading-relaxed">
               <p className="font-bold mb-0.5">ตรวจสอบบัญชีกับเซิร์ฟเวอร์ไม่สำเร็จ</p>
               <p className="text-rose-700 break-words">{sessionError || "ไม่ทราบสาเหตุ"}</p>
-              <p className="text-rose-700 mt-1">
-                ข้อมูลด้านล่างเป็นตัวอย่าง ไม่ได้มาจากบัญชีจริง
-              </p>
               {/expired/i.test(sessionError || "") && (
                 <button
                   onClick={relogin}
@@ -390,59 +365,87 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 p-4 rounded-2xl">
           <div>
             <h2 className="text-sm md:text-base font-bold text-navy-900">
-              สวัสดีครับ 👋 {group?.name || profile?.displayName || "ครอบครัว MoneyFamily"}
+              สวัสดีครับ 👋 {profile?.displayName || "ครอบครัว MoneyFamily"}
             </h2>
-            {group?.inviteCode && (
+            {group?.name && (
               <p className="text-[11px] text-slate-600 mt-1">
-                รหัสเชิญครอบครัว:{" "}
-                <span className="font-black tracking-[0.2em] text-navy-900">{group.inviteCode}</span>
+                ครอบครัว: <span className="font-bold text-navy-900">{group.name}</span>
+                {group.inviteCode && (
+                  <>
+                    {" · "}รหัสเชิญ:{" "}
+                    <span className="font-black tracking-[0.2em] text-navy-900">{group.inviteCode}</span>
+                  </>
+                )}
               </p>
             )}
             <p className="text-xs text-slate-600 mt-0.5">
-              พิมพ์บอกบอทหรือส่งสลิปในห้องแชท LINE ระบบจะบันทึกและซิงค์มาที่นี่อัตโนมัติ
+              พิมพ์บอกบอทหรือส่งสลิปในห้องแชท LINE รายการจะซิงค์มาที่นี่อัตโนมัติ
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-xs bg-white text-navy-900 px-3 py-1.5 rounded-xl border border-slate-200 font-semibold shadow-2xs">
+            <span className="inline-flex items-center gap-1 text-xs bg-white text-navy-900 px-3 py-1.5 rounded-xl border border-slate-200 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               ซิงค์สดจาก LINE
             </span>
           </div>
         </div>
 
-        {/* 3. Summary Cards (คงเหลือ, รายรับ, รายจ่าย) */}
         <SummaryCards income={incomeTotal} expense={expenseTotal} />
 
-        {/* 4. กราฟเปรียบเทียบกระแสเงินสด */}
-        <ExpenseChart data={chartData} />
-
-        {/* 5. ตารางประวัติธุรกรรมล่าสุด */}
-        <TransactionTable transactions={transactions} isLoading={isLoading} />
+        {transactions.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
+            <p className="text-sm font-bold text-navy-900">ยังไม่มีรายการ</p>
+            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              เริ่มบันทึกได้ 2 ทาง — พิมพ์ในแชท LINE เช่น “กาแฟ 60”
+              <br />
+              หรือกดปุ่ม “จดรายจ่าย” ด้านล่าง
+            </p>
+            <Link
+              href="/add"
+              className="mt-3 inline-flex items-center gap-1.5 bg-navy-900 hover:bg-navy-800 text-white text-xs font-bold px-4 py-2 rounded-xl"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              จดรายจ่าย
+            </Link>
+          </div>
+        ) : (
+          <>
+            <ExpenseChart data={chartData} />
+            <TransactionTable transactions={transactions} isLoading={isLoading} />
+          </>
+        )}
       </div>
 
-      {/* 6. Mobile Bottom Quick Action Bar (Fixed for PWA mobile experience) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-6 py-2.5 flex items-center justify-around z-40 shadow-lg">
-        <button
-          onClick={() => alert("💡 คุณสามารถพิมพ์ข้อความ เช่น 'กาแฟ 60' ใน LINE ได้เลยครับ!")}
-          className="flex flex-col items-center gap-1 text-navy-900 text-[11px] font-bold"
-        >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-amber to-brand-orange text-white flex items-center justify-center shadow-md">
-            <Plus className="w-5 h-5" />
+      {/* Bottom navigation (ใช้งานได้จริงทุกเมนู) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-2 grid grid-cols-4 gap-1 z-40 shadow-lg">
+        <Link href="/" className="flex flex-col items-center gap-0.5 text-navy-900 text-[11px] font-bold">
+          <div className="w-9 h-9 rounded-full bg-navy-900 text-white flex items-center justify-center">
+            <span className="text-sm font-black">M</span>
           </div>
-          <span>จดรายจ่าย</span>
-        </button>
+          หน้าแรก
+        </Link>
 
-        <button
-          onClick={() => alert("💡 พิมพ์คำว่า 'สรุปหนี้' ใน LINE เพื่อดูยอดหารบิลและ QR พร้อมเพย์ได้ทันที")}
-          className="flex flex-col items-center gap-1 text-slate-600 hover:text-navy-900 text-[11px] font-medium"
-        >
-          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-            <Users className="w-5 h-5 text-slate-700" />
+        <Link href="/add" className="flex flex-col items-center gap-0.5 text-slate-600 text-[11px] font-medium">
+          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+            <Plus className="w-4 h-4 text-navy-900" />
           </div>
-          <span>หารบิล</span>
-        </button>
-      </div>
+          จดรายจ่าย
+        </Link>
+
+        <Link href="/split" className="flex flex-col items-center gap-0.5 text-slate-600 text-[11px] font-medium">
+          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+            <Users className="w-4 h-4 text-navy-900" />
+          </div>
+          หารบิล
+        </Link>
+
+        <Link href="/settings" className="flex flex-col items-center gap-0.5 text-slate-600 text-[11px] font-medium">
+          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+            <Settings2 className="w-4 h-4 text-navy-900" />
+          </div>
+          จัดการ
+        </Link>
+      </nav>
     </main>
   );
 }
-
