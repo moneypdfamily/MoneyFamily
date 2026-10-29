@@ -41,3 +41,4 @@ next-env.d.ts
 .line-apply.log
 .line-apply-run.log
 .line-apply.pid
+.secret-form.log

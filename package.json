@@ -10,7 +10,8 @@
     "check:env": "node scripts/check-env.mjs",
     "push:env": "node scripts/push-env-vercel.mjs",
     "check:line": "node scripts/check-line.mjs",
-    "line:apply": "node scripts/apply-line-secret.mjs"
+    "line:apply": "node scripts/apply-line-secret.mjs",
+    "line:secret": "node scripts/secret-form.mjs"
   },
   "dependencies": {
     "@line/bot-sdk": "^9.6.0",
