@@ -16,6 +16,8 @@ export async function readIdentity(
 /** แปลง error เป็น response มาตรฐาน (ห้าม cache เพราะเป็นข้อมูลส่วนตัว) */
 export function errorResponse(error: unknown) {
   if (error instanceof LineAuthError) {
+    // log เหตุผลไว้เพื่อวินิจฉัยจาก Vercel logs (ไม่ log ตัว token)
+    console.error("❌ LIFF auth rejected:", error.message);
     return NextResponse.json({ error: "unauthorized", detail: error.message }, { status: 401 });
   }
 
