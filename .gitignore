@@ -42,3 +42,4 @@ next-env.d.ts
 .line-apply-run.log
 .line-apply.pid
 .secret-form.log
+.vercel-runtime.log

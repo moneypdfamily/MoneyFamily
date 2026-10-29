@@ -4,6 +4,9 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import type { Liff } from "@line/liff";
 import { APP_URL, LIFF_ID, LIFF_ENTRY_URL, isLiffConfigured } from "@/lib/liff/config";
 
+/** กัน login วนซ้ำเมื่อ token ยังหมดอายุหลังขอใหม่แล้วหนึ่งครั้ง */
+const RELOGIN_KEY = "liff:relogin";
+
 export interface LineProfile {
   userId: string;
   displayName: string;
@@ -111,6 +114,22 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
             Promise.resolve(safeGetIdToken(liff)),
           ]);
           if (!isMounted) return;
+
+          // LIFF อาจคืน ID token ที่หมดอายุแล้ว (เช่น เปิดแอปค้างไว้นาน)
+          // ใน LINE ให้ login ใหม่เงียบ ๆ หนึ่งครั้งเพื่อขอ token ใหม่
+          const expiresAt = token ? idTokenExpiresAt(token) : null;
+          const isStale = !token || (expiresAt !== null && expiresAt - Date.now() < 60_000);
+          if (isStale && liff.isInClient()) {
+            const attempted = sessionStorage.getItem(RELOGIN_KEY);
+            if (!attempted) {
+              sessionStorage.setItem(RELOGIN_KEY, "1");
+              redirectingRef.current = true;
+              liff.login({ redirectUri: window.location.href });
+              return;
+            }
+          } else if (token) {
+            sessionStorage.removeItem(RELOGIN_KEY);
+          }
           setProfile({
             userId: userProfile.userId,
             displayName: userProfile.displayName,
@@ -192,6 +211,20 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
 function safeGetIdToken(liff: Liff): string | null {
   try {
     return liff.getIDToken();
+  } catch {
+    return null;
+  }
+}
+
+/** อ่านเวลาหมดอายุ (exp) จาก ID token โดยไม่ต้องตรวจ signature ฝั่ง client */
+function idTokenExpiresAt(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/"))
+    ) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
   } catch {
     return null;
   }
