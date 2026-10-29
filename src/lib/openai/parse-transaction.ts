@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+
+import { generateJson, isGeminiConfigured } from "../ai/gemini";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 
@@ -68,7 +70,20 @@ export async function parseTransactionFromText(
    - ยา/หาหมอ -> health
    - รายรับ/เงินเดือน/ขายของได้ -> income
    - อื่นๆ -> other
+
+ตอบเป็น JSON ตาม schema นี้เท่านั้น: {"amount": number, "item": string, "account": string|null, "category": "food"|"transport"|"shopping"|"housing"|"utilities"|"entertainment"|"health"|"income"|"other", "date": "YYYY-MM-DD", "type": "expense"|"income"}
 `;
+
+    // ใช้ Gemini ก่อนถ้าตั้งค่าไว้ (ไม่ต้องพึ่ง OpenAI)
+    if (isGeminiConfigured()) {
+      const raw = await generateJson({ prompt });
+      const parsed = ExtractedTransactionSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("❌ Gemini ส่งข้อมูลไม่ตรง schema:", parsed.error.flatten());
+        return null;
+      }
+      return parsed.data;
+    }
 
     const completion = await openai.beta.chat.completions.parse({
       model: "gpt-4o-mini",

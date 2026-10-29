@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { ExtractedTransaction } from "../openai/parse-transaction";
+import { GeminiError, generateJson, isGeminiConfigured } from "../ai/gemini";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
@@ -51,10 +52,31 @@ export class SlipParseError extends Error {
  * สกัดข้อมูลสลิปธนาคารจาก Base64 Image
  * รองรับสลิปธนาคารไทยทุกแห่ง (KBank, SCB, Krungthai, PromptPay ฯลฯ)
  */
+const SLIP_PROMPT = `วิเคราะห์รูปภาพสลิปโอนเงินธนาคารไทยนี้ และดึงข้อมูลออกมาเป็น JSON ตามรูปแบบนี้เท่านั้น:\n{"amount": number, "merchant": string, "account": string|null, "category": "food"|"transport"|"shopping"|"housing"|"utilities"|"entertainment"|"health"|"income"|"other", "date": "YYYY-MM-DD", "type": "expense"}\n\n1. amount: ยอดเงินโอนสุทธิ (เช่น 120.00, 350.50) ห้ามใส่ comma\n2. merchant: ชื่อผู้รับเงิน หรือชื่อร้านค้า\n3. account: ธนาคารต้นทาง เช่น SCB, KBank, Krungthai, PromptPay\n4. date: แปลงวันที่ พ.ศ. เป็น ค.ศ. รูปแบบ YYYY-MM-DD\n5. category: ประเมินจากชื่อร้านค้า/รายละเอียดในสลิป\nถ้าอ่านตัวเลขไม่ได้จริง ๆ ให้ตอบ {"amount":0} เท่านั้น`;
+
 export async function parseSlipWithVision(
   base64Image: string
 ): Promise<SlipData | null> {
-  // ไม่มี key = อ่านสลิปไม่ได้ (ไม่สร้างข้อมูลปลอม)
+  // 1) ใช้ Gemini ก่อนถ้าตั้งค่าไว้
+  if (isGeminiConfigured()) {
+    try {
+      const raw = await generateJson({ prompt: SLIP_PROMPT, imageBase64: base64Image });
+      const parsed = SlipDataSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("❌ Gemini ส่งข้อมูลไม่ตรง schema:", parsed.error.flatten());
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      console.error("❌ Gemini Vision OCR Error:", error);
+      const code = error instanceof GeminiError ? error.code : "request_failed";
+      throw new SlipParseError(
+        code === "quota_exceeded" ? "quota_exceeded" : code === "missing_api_key" ? "missing_api_key" : "parse_failed"
+      );
+    }
+  }
+
+  // 2) ไม่มี key ใดเลย = อ่านสลิปไม่ได้ (ไม่สร้างข้อมูลปลอม)
   if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes("your_openai")) {
     throw new SlipParseError("missing_api_key");
   }
