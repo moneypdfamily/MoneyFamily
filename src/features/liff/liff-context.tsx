@@ -29,6 +29,8 @@ interface LiffContextType {
   login: () => void;
   /** ขอ ID token ใหม่ (ใช้เมื่อ token หมดอายุ) — คืน false ถ้าเคยลองแล้วในรอบนี้ */
   refreshToken: () => boolean;
+  /** ออกจากระบบแล้วเข้าสู่ระบบใหม่ทันที (ใช้เมื่อ token เก่าค้างและ refresh ไม่ช่วย) */
+  relogin: () => void;
   logout: () => void;
   /** ปิดหน้าต่าง LIFF กลับไปที่แชท (ใช้ได้เฉพาะใน LINE) */
   closeWindow: () => void;
@@ -45,6 +47,7 @@ const LiffContext = createContext<LiffContextType>({
   liffEntryUrl: LIFF_ENTRY_URL,
   login: () => {},
   refreshToken: () => false,
+  relogin: () => {},
   logout: () => {},
   closeWindow: () => {},
 });
@@ -181,6 +184,17 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
     return false;
   }, [liffObject]);
 
+  const relogin = useCallback(() => {
+    if (typeof window !== "undefined") sessionStorage.removeItem(RELOGIN_KEY);
+    if (!liffObject) {
+      if (LIFF_ENTRY_URL) window.location.href = LIFF_ENTRY_URL;
+      return;
+    }
+    // logout ก่อนเพื่อทิ้ง token เก่า แล้วขอ token ใหม่
+    liffObject.logout();
+    liffObject.login({ redirectUri: window.location.href });
+  }, [liffObject]);
+
   const login = () => {
     if (!liffObject) {
       // ยัง init ไม่เสร็จ หรือ init ล้มเหลว: เปิด LIFF URL ให้ LINE จัดการ login
@@ -219,6 +233,7 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
         liffEntryUrl: LIFF_ENTRY_URL,
         login,
         refreshToken,
+        relogin,
         logout,
         closeWindow,
       }}

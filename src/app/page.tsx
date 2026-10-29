@@ -20,6 +20,7 @@ export default function DashboardPage() {
     liffEntryUrl,
     login,
     refreshToken,
+    relogin,
     closeWindow,
   } = useLiff();
   const [isErrorDismissed, setIsErrorDismissed] = useState(false);
@@ -349,6 +350,14 @@ export default function DashboardPage() {
               <p className="text-rose-700 mt-1">
                 ข้อมูลด้านล่างเป็นตัวอย่าง ไม่ได้มาจากบัญชีจริง
               </p>
+              {/expired/i.test(sessionError || "") && (
+                <button
+                  onClick={relogin}
+                  className="mt-2 inline-flex items-center gap-1.5 bg-rose-800 hover:bg-rose-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"
+                >
+                  เข้าสู่ระบบ LINE ใหม่
+                </button>
+              )}
             </div>
           </div>
         )}
