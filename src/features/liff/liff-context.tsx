@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Liff } from "@line/liff";
 import { APP_URL, LIFF_ID, LIFF_ENTRY_URL, isLiffConfigured } from "@/lib/liff/config";
 
@@ -27,6 +27,8 @@ interface LiffContextType {
   /** ลิงก์เปิดแอปผ่าน LINE (https://liff.line.me/<liffId>) */
   liffEntryUrl: string;
   login: () => void;
+  /** ขอ ID token ใหม่ (ใช้เมื่อ token หมดอายุ) — คืน false ถ้าเคยลองแล้วในรอบนี้ */
+  refreshToken: () => boolean;
   logout: () => void;
   /** ปิดหน้าต่าง LIFF กลับไปที่แชท (ใช้ได้เฉพาะใน LINE) */
   closeWindow: () => void;
@@ -42,6 +44,7 @@ const LiffContext = createContext<LiffContextType>({
   error: null,
   liffEntryUrl: LIFF_ENTRY_URL,
   login: () => {},
+  refreshToken: () => false,
   logout: () => {},
   closeWindow: () => {},
 });
@@ -116,18 +119,17 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
           if (!isMounted) return;
 
           // LIFF อาจคืน ID token ที่หมดอายุแล้ว (เช่น เปิดแอปค้างไว้นาน)
-          // ใน LINE ให้ login ใหม่เงียบ ๆ หนึ่งครั้งเพื่อขอ token ใหม่
+          // ทั้งใน LINE และเบราว์เซอร์: login ใหม่หนึ่งครั้งเพื่อขอ token ที่ยังไม่หมดอายุ
           const expiresAt = token ? idTokenExpiresAt(token) : null;
           const isStale = !token || (expiresAt !== null && expiresAt - Date.now() < 60_000);
-          if (isStale && liff.isInClient()) {
-            const attempted = sessionStorage.getItem(RELOGIN_KEY);
-            if (!attempted) {
+          if (isStale) {
+            if (!sessionStorage.getItem(RELOGIN_KEY)) {
               sessionStorage.setItem(RELOGIN_KEY, "1");
               redirectingRef.current = true;
               liff.login({ redirectUri: window.location.href });
               return;
             }
-          } else if (token) {
+          } else {
             sessionStorage.removeItem(RELOGIN_KEY);
           }
           setProfile({
@@ -161,6 +163,23 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
     };
   }, []);
+
+  const refreshToken = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    if (sessionStorage.getItem(RELOGIN_KEY)) return false;
+    sessionStorage.setItem(RELOGIN_KEY, "1");
+    redirectingRef.current = true;
+
+    if (liffObject) {
+      liffObject.login({ redirectUri: window.location.href });
+      return true;
+    }
+    if (LIFF_ENTRY_URL) {
+      window.location.href = LIFF_ENTRY_URL;
+      return true;
+    }
+    return false;
+  }, [liffObject]);
 
   const login = () => {
     if (!liffObject) {
@@ -199,6 +218,7 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
         error,
         liffEntryUrl: LIFF_ENTRY_URL,
         login,
+        refreshToken,
         logout,
         closeWindow,
       }}

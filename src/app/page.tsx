@@ -19,6 +19,7 @@ export default function DashboardPage() {
     error: liffError,
     liffEntryUrl,
     login,
+    refreshToken,
     closeWindow,
   } = useLiff();
   const [isErrorDismissed, setIsErrorDismissed] = useState(false);
@@ -169,7 +170,12 @@ export default function DashboardPage() {
         if (cancelled) return;
 
         if (!res.ok) {
-          setSessionError(`HTTP ${res.status} — ${data?.detail || data?.error || "ไม่ทราบสาเหตุ"}`);
+          const detail = String(data?.detail || data?.error || "ไม่ทราบสาเหตุ");
+          // token หมดอายุระหว่างใช้งาน: ขอใหม่หนึ่งครั้งแล้วโหลดซ้ำ
+          if (res.status === 401 && /expired/i.test(detail) && refreshToken()) {
+            return;
+          }
+          setSessionError(`HTTP ${res.status} — ${detail}`);
           setSessionStatus("error");
           return;
         }
