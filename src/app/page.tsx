@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [sessionStatus, setSessionStatus] = useState<
     "idle" | "loading" | "ready" | "needs-group" | "error"
   >("idle");
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [chartData, setChartData] = useState<MonthlyChartData[]>([]);
   const [incomeTotal, setIncomeTotal] = useState(0);
@@ -168,9 +169,11 @@ export default function DashboardPage() {
         if (cancelled) return;
 
         if (!res.ok) {
+          setSessionError(`HTTP ${res.status} — ${data?.detail || data?.error || "ไม่ทราบสาเหตุ"}`);
           setSessionStatus("error");
           return;
         }
+        setSessionError(null);
 
         if (data.group) {
           setGroup(data.group as OnboardingGroup);
@@ -180,7 +183,10 @@ export default function DashboardPage() {
         }
       } catch (err) {
         console.error("❌ Failed to load LIFF session:", err);
-        if (!cancelled) setSessionStatus("error");
+        if (!cancelled) {
+          setSessionError(err instanceof Error ? err.message : "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+          setSessionStatus("error");
+        }
       }
     })();
 
@@ -310,6 +316,34 @@ export default function DashboardPage() {
             >
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+
+        {/* ใน LINE แต่ไม่ได้ ID token — สาเหตุที่พบบ่อยคือยังไม่เปิด scope openid */}
+        {isReady && !liffError && isInClient && isLoggedIn && !idToken && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 text-amber-900 p-3.5 rounded-2xl">
+            <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="text-xs leading-relaxed">
+              <p className="font-bold mb-0.5">ไม่ได้รับ ID token จาก LINE</p>
+              <p>
+                เปิดสิทธิ์ <b>openid</b> ให้ LIFF app (LINE Developers Console → LINE Login channel →
+                LIFF → Scopes) แล้วปิด–เปิดหน้าต่างนี้ใหม่ จึงจะยืนยันตัวตนและสร้างครอบครัวได้
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ตรวจสอบสิทธิ์/ลงทะเบียนกับเซิร์ฟเวอร์ไม่สำเร็จ — แสดงสาเหตุจริง ไม่ซ่อน */}
+        {sessionStatus === "error" && (
+          <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-2xl">
+            <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="text-xs leading-relaxed">
+              <p className="font-bold mb-0.5">ตรวจสอบบัญชีกับเซิร์ฟเวอร์ไม่สำเร็จ</p>
+              <p className="text-rose-700 break-words">{sessionError || "ไม่ทราบสาเหตุ"}</p>
+              <p className="text-rose-700 mt-1">
+                ข้อมูลด้านล่างเป็นตัวอย่าง ไม่ได้มาจากบัญชีจริง
+              </p>
+            </div>
           </div>
         )}
 
