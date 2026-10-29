@@ -2,7 +2,20 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, Crown, Loader2, LogIn, RefreshCw, Users, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Crown,
+  Loader2,
+  LogIn,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 
 import { useLiff } from "@/features/liff/liff-context";
 
@@ -40,6 +53,10 @@ export default function FamilySettingsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const loadFamily = useCallback(async () => {
     if (!idToken) return;
@@ -76,6 +93,57 @@ export default function FamilySettingsPage() {
   useEffect(() => {
     loadFamily();
   }, [loadFamily]);
+
+  // ฉันเป็นเจ้าของครอบครัวหรือไม่ (คนละตัวกับ member.role ด้านล่าง)
+  const amOwner = group?.role === "owner";
+
+  const saveName = async () => {
+    if (!idToken || !group) return;
+    const nextName = nameDraft.trim();
+    if (nextName.length < 2) {
+      setError("ชื่อครอบครัวต้องมีอย่างน้อย 2 ตัวอักษร");
+      return;
+    }
+    setSavingName(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/liff/family", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken, name: nextName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || data?.error || "เปลี่ยนชื่อไม่สำเร็จ");
+      setGroup((prev) => (prev ? { ...prev, name: data.group?.name ?? nextName } : prev));
+      setIsEditingName(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "เปลี่ยนชื่อไม่สำเร็จ");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const removeMember = async (member: FamilyMember) => {
+    if (!idToken) return;
+    if (!window.confirm(`ลบ ${member.displayName} ออกจากครอบครัว?`)) return;
+
+    setRemovingId(member.userId);
+    setError(null);
+    try {
+      const res = await fetch("/api/liff/family/member/remove", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken, userId: member.userId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || data?.error || "ลบสมาชิกไม่สำเร็จ");
+      setMembers((prev) => prev.filter((m) => m.userId !== member.userId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ลบสมาชิกไม่สำเร็จ");
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   const copyInviteCode = async () => {
     if (!group?.inviteCode) return;
@@ -152,9 +220,54 @@ export default function FamilySettingsPage() {
             {/* ครอบครัว + รหัสเชิญ */}
             <section className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-semibold text-slate-500">ครอบครัว</p>
-                  <h1 className="text-lg font-black text-navy-900">{group.name}</h1>
+                  {isEditingName ? (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <input
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        maxLength={60}
+                        autoFocus
+                        className="w-full min-w-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm font-bold text-navy-900 outline-none focus:border-brand-amber focus:ring-2 focus:ring-amber-100"
+                      />
+                      <button
+                        onClick={saveName}
+                        disabled={savingName}
+                        title="บันทึก"
+                        className="w-8 h-8 shrink-0 rounded-lg bg-navy-900 text-white flex items-center justify-center disabled:opacity-50"
+                      >
+                        {savingName ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingName(false)}
+                        title="ยกเลิก"
+                        className="w-8 h-8 shrink-0 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h1 className="text-lg font-black text-navy-900 truncate">{group.name}</h1>
+                      {amOwner && (
+                        <button
+                          onClick={() => {
+                            setNameDraft(group.name);
+                            setIsEditingName(true);
+                          }}
+                          title="เปลี่ยนชื่อครอบครัว"
+                          className="w-7 h-7 shrink-0 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <span className="text-[11px] bg-amber-100 text-amber-900 px-2 py-1 rounded-lg font-bold">
                   {members.length} สมาชิก
@@ -237,11 +350,27 @@ export default function FamilySettingsPage() {
                             {isOwner ? "เจ้าของครอบครัว" : "สมาชิก"}
                           </p>
                         </div>
-                        {isOwner && (
+                        {isOwner ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-1 rounded-lg">
                             <Crown className="w-3 h-3" />
                             OWNER
                           </span>
+                        ) : (
+                          amOwner &&
+                          !isMe && (
+                            <button
+                              onClick={() => removeMember(member)}
+                              disabled={removingId === member.userId}
+                              title="ลบสมาชิกคนนี้"
+                              className="w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 flex items-center justify-center disabled:opacity-50"
+                            >
+                              {removingId === member.userId ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )
                         )}
                       </li>
                     );

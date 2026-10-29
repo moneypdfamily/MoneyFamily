@@ -268,6 +268,50 @@ export async function createFamilyGroup(params: {
   return { id: group.id, name: group.name, inviteCode: group.invite_code, role: "owner" };
 }
 
+/** เปลี่ยนชื่อครอบครัว */
+export async function renameFamilyGroup(params: {
+  groupId: string;
+  name: string;
+}): Promise<string> {
+  const name = params.name.trim();
+  if (name.length < 2) throw new GroupError("ชื่อครอบครัวต้องมีอย่างน้อย 2 ตัวอักษร");
+  if (name.length > 60) throw new GroupError("ชื่อครอบครัวยาวเกิน 60 ตัวอักษร");
+
+  const { error } = await supabaseAdmin
+    .from("groups")
+    .update({ name })
+    .eq("id", params.groupId);
+
+  if (error) throw new GroupError(`แก้ชื่อครอบครัวไม่สำเร็จ: ${error.message}`, 500);
+  return name;
+}
+
+/** ลบสมาชิกออกจากกลุ่ม (ไม่สามารถลบเจ้าของได้) */
+export async function removeGroupMember(params: {
+  groupId: string;
+  userId: string;
+}): Promise<void> {
+  const { data: target, error: readError } = await supabaseAdmin
+    .from("group_members")
+    .select("role")
+    .eq("group_id", params.groupId)
+    .eq("user_id", params.userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (readError) throw new GroupError(`ตรวจสอบสมาชิกไม่สำเร็จ: ${readError.message}`, 500);
+  if (!target) throw new GroupError("ไม่พบสมาชิกคนนี้ในครอบครัว", 404);
+  if (target.role === "owner") throw new GroupError("ลบเจ้าของครอบครัวไม่ได้", 400);
+
+  const { error } = await supabaseAdmin
+    .from("group_members")
+    .delete()
+    .eq("group_id", params.groupId)
+    .eq("user_id", params.userId);
+
+  if (error) throw new GroupError(`ลบสมาชิกไม่สำเร็จ: ${error.message}`, 500);
+}
+
 /** เข้าร่วมกลุ่มด้วยรหัสเชิญ */
 export async function joinFamilyGroup(params: {
   userId: string;

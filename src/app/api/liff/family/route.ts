@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { ensureUser, getGroupMembers, getMembership } from "@/lib/supabase/members";
+import {
+  ensureUser,
+  getGroupMembers,
+  getMembership,
+  renameFamilyGroup,
+} from "@/lib/supabase/members";
 import { errorResponse, NO_STORE, readIdentity } from "@/lib/liff/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +67,34 @@ export async function POST(req: NextRequest) {
       },
       { headers: NO_STORE }
     );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+/**
+ * PATCH /api/liff/family
+ * body: { idToken, name }
+ * เปลี่ยนชื่อครอบครัว — เฉพาะเจ้าของ (owner)
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const { body, identity } = await readIdentity(req);
+    const user = await ensureUser(identity);
+    const group = await getMembership(user.id);
+
+    if (!group) {
+      return NextResponse.json({ error: "no_group" }, { status: 409, headers: NO_STORE });
+    }
+    if (group.role !== "owner") {
+      return NextResponse.json(
+        { error: "forbidden", detail: "เฉพาะเจ้าของครอบครัวเท่านั้นที่เปลี่ยนชื่อได้" },
+        { status: 403, headers: NO_STORE }
+      );
+    }
+
+    const name = await renameFamilyGroup({ groupId: group.id, name: String(body.name ?? "") });
+    return NextResponse.json({ group: { ...group, name } }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);
   }
