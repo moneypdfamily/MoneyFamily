@@ -68,14 +68,20 @@ async function discoverModelsFromGoogle(apiKey: string): Promise<Array<{ version
 
       console.log(`📋 [Gemini ${apiVersion}] พบโมเดลที่พร้อมใช้งาน:`, supported);
 
-      // เรียงลำดับความสำคัญ: 2.5-flash -> 2.0-flash -> 1.5-flash -> flash อื่นๆ -> pro
+      // เรียงลำดับความสำคัญโมเดลปัจจุบันของ Google:
+      // gemini-3.8-flash -> gemini-flash-latest -> gemini-3.7-flash -> gemini-3.5-flash -> flash อื่นๆ
+      // (ละเว้นโมเดลเก่าที่ปิดให้บริการแล้ว เช่น 1.5-flash, 2.0-flash, 2.5-flash)
       const sorted = supported.sort((a: string, b: string) => {
         const score = (name: string) => {
-          if (name.includes("2.5-flash")) return 12;
-          if (name.includes("2.0-flash")) return 10;
-          if (name.includes("1.5-flash")) return 8;
-          if (name.includes("flash")) return 6;
-          if (name.includes("pro")) return 4;
+          if (name === "gemini-3.8-flash") return 50;
+          if (name === "gemini-flash-latest") return 45;
+          if (name.includes("3.8-flash")) return 40;
+          if (name.includes("3.7-flash")) return 35;
+          if (name.includes("3.6-flash")) return 30;
+          if (name.includes("3.5-flash")) return 25;
+          if (name.includes("flash") && !name.includes("1.5") && !name.includes("2.0") && !name.includes("2.5")) return 20;
+          if (name.includes("pro-latest")) return 15;
+          if (name.includes("pro")) return 10;
           return 1;
         };
         return score(b) - score(a);
@@ -148,15 +154,12 @@ export async function generateJson({
   }
 
   fallbackList.push(
-    { version: "v1beta", model: "gemini-2.5-flash" },
-    { version: "v1beta", model: "gemini-2.0-flash" },
-    { version: "v1beta", model: "gemini-1.5-flash" },
-    { version: "v1beta", model: "gemini-1.5-flash-latest" },
-    { version: "v1beta", model: "gemini-2.0-flash-exp" },
-    { version: "v1", model: "gemini-2.5-flash" },
-    { version: "v1", model: "gemini-1.5-flash" },
-    { version: "v1beta", model: "gemini-1.5-pro" },
-    { version: "v1", model: "gemini-1.5-pro" }
+    { version: "v1beta", model: "gemini-3.8-flash" },
+    { version: "v1beta", model: "gemini-flash-latest" },
+    { version: "v1beta", model: "gemini-3.7-flash" },
+    { version: "v1beta", model: "gemini-3.5-flash" },
+    { version: "v1beta", model: "gemini-3.1-flash-lite" },
+    { version: "v1beta", model: "gemini-pro-latest" }
   );
 
   // รวมรายการที่จะทดสอบ

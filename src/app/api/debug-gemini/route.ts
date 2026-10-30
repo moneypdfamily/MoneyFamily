@@ -47,13 +47,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. Test generateContent on several candidate models
+  // 2. Test generateContent on modern 2026 models
   const testModels = [
-    { version: "v1beta", model: "gemini-1.5-flash" },
-    { version: "v1beta", model: "gemini-2.0-flash" },
-    { version: "v1beta", model: "gemini-2.5-flash" },
-    { version: "v1beta", model: "gemini-1.5-pro" },
-    { version: "v1", model: "gemini-1.5-flash" },
+    { version: "v1beta", model: "gemini-3.8-flash" },
+    { version: "v1beta", model: "gemini-flash-latest" },
+    { version: "v1beta", model: "gemini-3.7-flash" },
+    { version: "v1beta", model: "gemini-3.5-flash" },
   ];
 
   const generateTests: Record<string, unknown> = {};
