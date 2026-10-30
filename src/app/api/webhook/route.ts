@@ -11,6 +11,7 @@ import {
   getUserAndDefaultGroup,
   saveTransactionToSupabase,
   deleteTransactionFromSupabase,
+  supabaseAdmin,
 } from "@/lib/supabase/admin";
 import {
   getGroupMembersWithProfiles,
@@ -225,10 +226,23 @@ async function processEventsInBackground(events: WebhookEvent[]) {
             groupName: context.groupName,
           });
 
-          await lineClient.pushMessage({
-            to: lineUserId,
-            messages: [slipFlexMessage],
-          });
+          try {
+            await lineClient.pushMessage({
+              to: lineUserId,
+              messages: [slipFlexMessage],
+            });
+          } catch (flexPushError) {
+            console.error("⚠️ Flex Message push failed, falling back to text:", flexPushError);
+            await lineClient.pushMessage({
+              to: lineUserId,
+              messages: [
+                {
+                  type: "text",
+                  text: `✅ บันทึกสลิปเรียบร้อย!\n💸 ยอดเงิน: ฿${slipData.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}\n👤 ผู้รับ: ${slipData.merchant}\n🏦 ช่องทาง: ${slipData.account || "ไม่ระบุ"}\n📅 วันที่: ${slipData.date}`,
+                },
+              ],
+            });
+          }
         } catch (imageError) {
           console.error("❌ Error processing slip image:", imageError);
 
@@ -330,12 +344,14 @@ async function processEventsInBackground(events: WebhookEvent[]) {
         // --------------------------------------------------------------------
         else if (action === "open_split") {
           let transactionId = txId;
-          const amount = parseFloat(postbackData.get("amount") || "0");
-          const item = postbackData.get("item") || "รายการหารบิล";
+          let amount = parseFloat(postbackData.get("amount") || "0");
+          let item = postbackData.get("item") || "";
 
           // หากเป็นรายการจาก Text ที่ยังไม่ได้สร้าง Transaction ให้บันทึกก่อน
           if (!transactionId && rawPayload) {
             const payload = JSON.parse(decodeURIComponent(rawPayload));
+            item = payload.i || item;
+            amount = payload.a || amount;
             const saved = await saveTransactionToSupabase({
               groupId: context.groupId,
               payerId: context.userId,
@@ -350,6 +366,20 @@ async function processEventsInBackground(events: WebhookEvent[]) {
             });
             transactionId = saved.id;
           }
+
+          // หากมี transactionId แต่ยังไม่มีชื่อรายการ ให้ดึงจากฐานข้อมูล
+          if (transactionId && !item) {
+            const { data: tx } = await supabaseAdmin
+              .from("transactions")
+              .select("item, amount")
+              .eq("id", transactionId)
+              .maybeSingle();
+            if (tx) {
+              if (tx.item) item = tx.item;
+              if (!amount && tx.amount) amount = tx.amount;
+            }
+          }
+          if (!item) item = "รายการหารบิล";
 
           if (transactionId) {
             // ดึงรายชื่อสมาชิกในกลุ่มทุกคน

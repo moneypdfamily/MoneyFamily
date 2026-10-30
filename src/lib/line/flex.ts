@@ -186,7 +186,7 @@ export function createTransactionConfirmationMessage(params: {
           action: {
             type: "postback",
             label: "👨‍👩‍👧‍👦 หารกับคนในบ้าน",
-            data: `action=open_split&amount=${transaction.amount}&item=${encodeURIComponent(transaction.item)}&payload=${encodeURIComponent(compactPayload)}`,
+            data: `action=open_split&amount=${transaction.amount}&payload=${encodeURIComponent(compactPayload)}`,
             displayText: "👨‍👩‍👧‍👦 ขอหารค่าใช้จ่ายรายการนี้กับคนในบ้าน",
           },
         },
@@ -384,7 +384,7 @@ export function createSlipConfirmationMessage(params: {
           action: {
             type: "postback",
             label: "👨‍👩‍👧‍👦 หารกับคนในบ้าน",
-            data: `action=open_split&txId=${transactionId}&amount=${slip.amount}&item=${encodeURIComponent(slip.merchant)}&payload=${encodeURIComponent(slipPayload)}`,
+            data: `action=open_split&txId=${transactionId}&amount=${slip.amount}`,
             displayText: "👨‍👩‍👧‍👦 ขอหารค่าใช้จ่ายรายการนี้กับคนในบ้าน",
           },
         },
