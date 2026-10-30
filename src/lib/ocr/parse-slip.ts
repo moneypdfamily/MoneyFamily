@@ -92,7 +92,7 @@ export const SlipDataSchema = z.object({
 
 export type SlipData = z.infer<typeof SlipDataSchema>;
 
-export type SlipParseErrorCode = "missing_api_key" | "quota_exceeded" | "parse_failed";
+export type SlipParseErrorCode = "missing_api_key" | "quota_exceeded" | "parse_failed" | "invalid_key";
 
 export class SlipParseError extends Error {
   code: SlipParseErrorCode;
@@ -193,10 +193,13 @@ export async function parseSlipWithVision(base64Image: string): Promise<SlipData
     throw new SlipParseError("missing_api_key");
   }
 
-  // หากเกิด quota exceeded
+  // หากเกิด quota exceeded หรือ invalid key
   const gCode = geminiError instanceof GeminiError ? geminiError.code : undefined;
   if (gCode === "quota_exceeded") {
     throw new SlipParseError("quota_exceeded");
+  }
+  if (gCode === "invalid_key") {
+    throw new SlipParseError("invalid_key");
   }
 
   throw new SlipParseError("parse_failed");
