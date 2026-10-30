@@ -48,3 +48,31 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(results);
 }
+
+export async function POST(req: NextRequest) {
+  const secret = req.nextUrl.searchParams.get("secret");
+  const expectedSecret = process.env.CRON_SECRET || "moneyfamily_cron_secret_2026";
+
+  if (secret !== expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { imageBase64 } = await req.json();
+    if (!imageBase64) {
+      return NextResponse.json({ error: "Missing imageBase64" }, { status: 400 });
+    }
+
+    console.log("🔍 [Debug POST] Testing parseSlipWithVision on image...");
+    const slip = await parseSlipWithVision(imageBase64);
+    console.log("✅ [Debug POST] Result:", slip);
+    return NextResponse.json({ success: true, slip });
+  } catch (err: any) {
+    console.error("❌ [Debug POST] Error:", err);
+    return NextResponse.json(
+      { success: false, error: err?.message || String(err), code: err?.code },
+      { status: 500 }
+    );
+  }
+}
+
