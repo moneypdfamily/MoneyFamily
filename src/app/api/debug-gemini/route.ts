@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateJson } from "@/lib/ai/gemini";
+import { parseSlipWithVision } from "@/lib/ocr/parse-slip";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,8 @@ export async function GET(req: NextRequest) {
     prefix: key.length > 8 ? key.slice(0, 6) + "..." + key.slice(-4) : "empty",
   };
 
+  console.log("🔍 [Debug Gemini] Checking KeyMeta:", keyMeta);
+
   if (!key) {
     return NextResponse.json({
       status: "error",
@@ -29,64 +33,18 @@ export async function GET(req: NextRequest) {
 
   const results: Record<string, unknown> = { keyMeta };
 
-  // 1. Test GET /v1beta/models?key=...
-  for (const apiVersion of ["v1beta", "v1"]) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/${apiVersion}/models?key=${encodeURIComponent(key)}`;
-      const res = await fetch(url, {
-        headers: { "x-goog-api-key": key },
-      });
-      const body = await res.json().catch((e) => ({ parse_err: String(e) }));
-      results[`models_${apiVersion}`] = {
-        status: res.status,
-        statusText: res.statusText,
-        body,
-      };
-    } catch (err: any) {
-      results[`models_${apiVersion}`] = { error: err?.message || String(err) };
-    }
+  // 1. Test generateJson function directly
+  try {
+    console.log("🧪 Testing generateJson()...");
+    const testJson = await generateJson({
+      prompt: 'Respond ONLY with JSON: {"status": "ok", "service": "gemini"}',
+    });
+    console.log("✅ generateJson() Succeeded:", testJson);
+    results.generateJsonTest = { success: true, data: testJson };
+  } catch (err: any) {
+    console.error("❌ generateJson() Failed:", err);
+    results.generateJsonTest = { success: false, error: err?.message || String(err), code: err?.code };
   }
-
-  // 2. Test generateContent on modern 2026 models
-  const testModels = [
-    { version: "v1beta", model: "gemini-3.8-flash" },
-    { version: "v1beta", model: "gemini-flash-latest" },
-    { version: "v1beta", model: "gemini-3.7-flash" },
-    { version: "v1beta", model: "gemini-3.5-flash" },
-  ];
-
-  const generateTests: Record<string, unknown> = {};
-
-  for (const t of testModels) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/${t.version}/models/${t.model}:generateContent?key=${encodeURIComponent(key)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": key,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: "Respond ONLY with JSON: {\"status\": \"ok\"}" }] }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json",
-          },
-        }),
-      });
-
-      const body = await res.json().catch((e) => ({ parse_err: String(e) }));
-      generateTests[`${t.version}/${t.model}`] = {
-        status: res.status,
-        statusText: res.statusText,
-        body,
-      };
-    } catch (err: any) {
-      generateTests[`${t.version}/${t.model}`] = { error: err?.message || String(err) };
-    }
-  }
-
-  results.generateTests = generateTests;
 
   return NextResponse.json(results);
 }
