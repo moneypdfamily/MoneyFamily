@@ -76,13 +76,16 @@ export async function parseTransactionFromText(
 
     // ใช้ Gemini ก่อนถ้าตั้งค่าไว้ (ไม่ต้องพึ่ง OpenAI)
     if (isGeminiConfigured()) {
-      const raw = await generateJson({ prompt });
-      const parsed = ExtractedTransactionSchema.safeParse(raw);
-      if (!parsed.success) {
-        console.error("❌ Gemini ส่งข้อมูลไม่ตรง schema:", parsed.error.flatten());
-        return null;
+      try {
+        const raw = await generateJson({ prompt });
+        const parsed = ExtractedTransactionSchema.safeParse(raw);
+        if (parsed.success) {
+          return parsed.data;
+        }
+        console.warn("⚠️ Gemini คืนค่าไม่ตรง schema:", parsed.error.flatten());
+      } catch (geminiErr) {
+        console.warn("⚠️ Gemini text parsing ขัดข้อง กำลังลอง OpenAI:", geminiErr);
       }
-      return parsed.data;
     }
 
     const completion = await openai.beta.chat.completions.parse({

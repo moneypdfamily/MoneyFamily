@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
+import { generateJson, isGeminiConfigured } from "../ai/gemini";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
@@ -40,20 +41,6 @@ export async function parseRecurringFromText(
   text: string,
   currentDate: string = new Date().toISOString().split("T")[0]
 ): Promise<ExtractedRecurring | null> {
-  // หากไม่มี API Key ให้คืนค่า Mock สำหรับทดสอบ
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes("your_openai")) {
-    return {
-      item: "Netflix",
-      amount: 419.0,
-      frequency: "monthly",
-      interval_count: 1,
-      category: "entertainment",
-      start_date: currentDate,
-      next_run_date: currentDate,
-      type: "expense",
-    };
-  }
-
   try {
     const prompt = `วิเคราะห์ข้อความภาษาไทยของผู้ใช้ที่ต้องการตั้งบิล/รายรับรายจ่ายประจำ:
 ข้อความ: "${text}"
@@ -68,7 +55,26 @@ export async function parseRecurringFromText(
 3. คำนวณ next_run_date ในรูปแบบ YYYY-MM-DD
    - หากระบุ "ทุกวันที่ 1" ให้คำนวณวันถัดไปที่เป็นวันที่ 1
    - หากไม่ระบุ ให้ใช้วันนี้หรือเดือนถัดไปตามบริบท
-4. เลือก category ที่ตรงที่สุด เช่น Netflix -> entertainment, ค่าเน็ต/ค่าไฟ -> utilities, ค่าเช่าคอนโด -> housing`;
+4. เลือก category ที่ตรงที่สุด เช่น Netflix -> entertainment, ค่าเน็ต/ค่าไฟ -> utilities, ค่าเช่าคอนโด -> housing
+5. type: ปกติเป็น "expense"
+
+ตอบเป็น JSON ตามรูปแบบนี้เท่านั้น:
+{"item": "...", "amount": 0, "frequency": "monthly", "interval_count": 1, "category": "entertainment", "start_date": "YYYY-MM-DD", "next_run_date": "YYYY-MM-DD", "type": "expense"}`;
+
+    if (isGeminiConfigured()) {
+      try {
+        const raw = await generateJson({ prompt });
+        const parsed = RecurringTransactionSchema.safeParse(raw);
+        if (parsed.success) return parsed.data;
+        console.warn("⚠️ Gemini คืนค่าไม่ตรง Recurring schema:", parsed.error.flatten());
+      } catch (geminiErr) {
+        console.warn("⚠️ Gemini recurring parsing ขัดข้อง กำลังลอง OpenAI:", geminiErr);
+      }
+    }
+
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes("your_openai")) {
+      return null;
+    }
 
     const completion = await openai.beta.chat.completions.parse({
       model: "gpt-4o-mini",

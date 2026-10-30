@@ -129,6 +129,7 @@ export function TransactionTable({ transactions, isLoading = false }: Transactio
               <th className="px-5 py-3">ผู้จ่าย</th>
               <th className="px-5 py-3">การหารบิล</th>
               <th className="px-5 py-3 text-right">จำนวนเงิน</th>
+              <th className="px-5 py-3">จัดการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -166,6 +167,19 @@ export function TransactionTable({ transactions, isLoading = false }: Transactio
                     <span className={isExpense ? "text-slate-900" : "text-emerald-600"}>
                       {isExpense ? "-" : "+"}฿{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
+                  </td><td className="px-5 py-3.5 text-right">
+                    <button
+                      className="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 cursor-pointer"
+                      onClick={(e) => {
+                        if (window.confirm('ลบรายการนี้หรือไม่?')) {
+                          fetch(`/api/liff/transactions/delete?txId=${tx.id}`, { method: 'POST' })
+                            .then(() => window.location.reload())
+                            .catch(() => alert('ลบไม่สำเร็จ'));
+                        }
+                      }}
+                    >
+                      🗑️ ลบ
+                    </button>
                   </td>
                 </tr>
               );

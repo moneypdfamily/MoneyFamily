@@ -72,3 +72,50 @@ export async function POST(req: NextRequest) {
     return errorResponse(error);
   }
 }
+
+/**
+ * DELETE /api/liff/transactions?txId=xxx
+ * ลบรายการ transaction ออกจากฐานข้อมูล
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const txId = searchParams.get("txId");
+
+    if (!txId) {
+      return NextResponse.json(
+        { error: "Missing txId parameter" },
+        { status: 400 }
+      );
+    }
+
+    const { identity } = await readIdentity(req);
+    const user = await ensureUser(identity);
+    const group = await getMembership(user.id);
+
+    if (!group) {
+      return NextResponse.json(
+        { error: "no_group", detail: "ยังไม่มีครอบครัว" },
+        { status: 409, headers: NO_STORE }
+      );
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from("transactions")
+      .delete()
+      .eq("id", txId)
+      .eq("payer_id", user.id);
+
+    if (deleteError) {
+      console.error("❌ Failed to delete transaction:", deleteError);
+      return NextResponse.json(
+        { error: "Failed to delete transaction", detail: deleteError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true }, { headers: NO_STORE });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
